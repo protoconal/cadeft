@@ -243,6 +243,14 @@ class Transaction(BaseTxn):
     def get_amount(self) -> int:
         return self.amount
 
+    def get_base_txn(self) -> BaseTxn:
+        return BaseTxn(
+            self.txn_type, self.amount, self.item_trace_no, self.institution_id,
+            self.stored_txn_type, self.short_name, self.long_name, self.user_id,
+            self.cross_ref_no, self.sundry_info, self.settlement_code,
+            self.invalid_data_element_id, self.record_type,
+        )
+
     def get_account_no(self) -> str:
         return self.account_no
 
@@ -455,6 +463,7 @@ class Transaction(BaseTxn):
     Validate = validate
     GetType = get_type
     GetAmount = get_amount
+    GetBaseTxn = get_base_txn
     GetAccountNo = get_account_no
     GetDate = get_date
     GetName = get_name
@@ -639,8 +648,8 @@ _TRANSACTION_CLASS = {
 }
 
 
-def _new_transaction(record_type: str, **values: Any) -> Transaction:
-    cls = _TRANSACTION_CLASS[record_type]
+def _new_transaction(txn_record_type: str, **values: Any) -> Transaction:
+    cls = _TRANSACTION_CLASS[txn_record_type]
     return cls(**values)
 
 
