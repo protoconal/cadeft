@@ -374,7 +374,7 @@ class Transaction(BaseTxn):
         errors: list[str] = []
 
         def required(name: str, value: Any) -> None:
-            if value is None or value == "" or value == 0:
+            if value is None or value == "":
                 errors.append(f"{name} is required")
 
         def max_len(name: str, value: str, maximum: int) -> None:
@@ -392,7 +392,9 @@ class Transaction(BaseTxn):
         required("txn_type", self.txn_type)
         numeric("txn_type", self.txn_type)
         max_len("txn_type", self.txn_type, 3)
-        required("amount", self.amount)
+        # Go's required validator treats a zero-value integer as missing.
+        if self.amount == 0:
+            errors.append("amount is required")
         if self.amount > 9_999_999_999:
             errors.append("amount exceeds maximum")
         numeric("item_trace_no", self.item_trace_no)
@@ -418,8 +420,6 @@ class Transaction(BaseTxn):
         if self.record_type not in _VALID_RECORD_TYPES:
             errors.append("invalid record type")
         required(self.DATE_JSON, self.date_value)
-        if self.date_value is not None and self.DATE_JSON == "date_funds_available":
-            pass
         required(self.ACCOUNT_JSON, self.account_no)
         max_len(self.ACCOUNT_JSON, self.account_no, 12)
         numeric(self.ACCOUNT_JSON, self.account_no)

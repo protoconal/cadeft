@@ -107,7 +107,7 @@ def main() -> int:
         print("PASS: sample file parse output")
 
         for record_type, txn in TXNS.items():
-            request = {"action": "build", "transaction": txn, **txn}
+            request = {"action": "build", **txn}
             go_build = run(GO_REFERENCE, data=json.dumps(request))
             py_txn = cadeft.transaction_from_dict(txn)
             py_segment = py_txn.build()
