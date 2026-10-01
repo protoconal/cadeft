@@ -374,7 +374,10 @@ class Transaction(BaseTxn):
         errors: list[str] = []
 
         def required(name: str, value: Any) -> None:
-            if value is None or value == "":
+            missing = value is None or value == ""
+            if isinstance(value, (int, float)) and value == 0:
+                missing = True
+            if missing:
                 errors.append(f"{name} is required")
 
         def max_len(name: str, value: str, maximum: int) -> None:
@@ -392,9 +395,7 @@ class Transaction(BaseTxn):
         required("txn_type", self.txn_type)
         numeric("txn_type", self.txn_type)
         max_len("txn_type", self.txn_type, 3)
-        # Go's required validator treats a zero-value integer as missing.
-        if self.amount == 0:
-            errors.append("amount is required")
+        required("amount", self.amount)
         if self.amount > 9_999_999_999:
             errors.append("amount exceeds maximum")
         numeric("item_trace_no", self.item_trace_no)

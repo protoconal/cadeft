@@ -119,7 +119,6 @@ def main() -> int:
                 GO_REFERENCE,
                 data=json.dumps({
                     "action": "parse",
-                    "transaction": txn,
                     **txn,
                     "serialized": go_build.stdout,
                 }),
