@@ -24,10 +24,11 @@ def main() -> int:
                 result = Reader(sys.stdin.buffer.read()).read_file()
             sys.stdout.write(json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":")))
             return 0
-        if not args.file:
-            return 0
-        with open(args.file, encoding="utf-8") as source:
-            eft_file = file_from_dict(json.load(source))
+        if args.file:
+            with open(args.file, encoding="utf-8") as source:
+                eft_file = file_from_dict(json.load(source))
+        else:
+            eft_file = file_from_dict(json.load(sys.stdin))
         if args.validate:
             eft_file.validate()
         sys.stdout.write(eft_file.create())

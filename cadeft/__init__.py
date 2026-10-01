@@ -241,7 +241,6 @@ class Transaction(BaseTxn):
     HAS_ORIGINAL_ITEM = False
     HAS_INVALID_ID = False
     DATE_ERROR = "failed to parse due date"
-    NAME_ERROR = "failed to format payor name"
 
     def __post_init__(self) -> None:
         self.record_type = self.RECORD_TYPE
@@ -285,8 +284,7 @@ class Transaction(BaseTxn):
         return self.original_item_trace_no if self.HAS_ORIGINAL_ITEM else ""
 
     def build(self) -> str:
-        def name_field(value: str, width: int, error: str) -> str:
-            del error
+        def name_field(value: str, width: int) -> str:
             return abbreviate(normalize(value), width)
 
         def date_field() -> str:
@@ -300,9 +298,9 @@ class Transaction(BaseTxn):
             abbreviate(self.account_no, 12),
             pad_numeric(self.item_trace_no, 22),
             pad_numeric(self.stored_txn_type, 3),
-            name_field(self.short_name, 15, "failed to format originator short name"),
-            name_field(self.name, 30, self.NAME_ERROR),
-            name_field(self.long_name, 30, "failed to format originator long name"),
+            name_field(self.short_name, 15),
+            name_field(self.name, 30),
+            name_field(self.long_name, 30),
             abbreviate(self.user_id, 10),
             abbreviate(self.cross_ref_no, 19),
         ]
@@ -493,7 +491,6 @@ class Debit(Transaction):
     NAME_JSON = "payor_name"
     HAS_RETURN = True
     DATE_ERROR = "failed to parse due date"
-    NAME_ERROR = "failed to format payor name"
 
     def __post_init__(self) -> None:
         self.date_value = self.due_date
@@ -527,7 +524,6 @@ class Credit(Transaction):
     NAME_JSON = "payee_name"
     HAS_RETURN = True
     DATE_ERROR = "failed to parse date funds available"
-    NAME_ERROR = "failed to format payee name"
 
     def __post_init__(self) -> None:
         self.date_value, self.account_no, self.name = self.date_funds_available, self.payee_account_no, self.payee_name
@@ -595,7 +591,6 @@ class CreditReturn(Transaction):
     HAS_ORIGINAL_ITEM = True
     HAS_INVALID_ID = True
     DATE_ERROR = "failed to parse date funds available"
-    NAME_ERROR = "failed to format payee name"
 
     def __post_init__(self) -> None:
         self.date_value, self.account_no, self.name = self.date_funds_available, self.payee_account_no, self.payee_name

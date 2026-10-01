@@ -12,8 +12,8 @@ import (
 
 type request struct {
 	Action                    string    `json:"action"`
-	TransactionType           string    `json:"type"`
-	TxnType                   string    `json:"txn_type"`
+	RecordType                string    `json:"type"`
+	TransactionTypeCode       string    `json:"txn_type"`
 	Amount                    int64     `json:"amount"`
 	DueDate                   time.Time `json:"due_date"`
 	DateFundsAvailable        time.Time `json:"date_funds_available"`
@@ -62,14 +62,14 @@ func main() {
 		cadeft.WithInvalidDataElementID(req.InvalidDataElementID),
 	}
 	txn := cadeft.NewTransaction(
-		cadeft.RecordType(req.TransactionType), cadeft.TransactionType(req.TxnType),
+		cadeft.RecordType(req.RecordType), cadeft.TransactionType(req.TransactionTypeCode),
 		req.Amount, &txnDate, req.InstitutionID,
 		firstNonEmpty(req.PayorAccountNo, req.PayeeAccountNo), req.ItemTraceNo,
 		req.OriginatorShortName, firstNonEmpty(req.PayorName, req.PayeeName),
 		req.OriginatorLongName, bankID, bankAccount, req.OriginalItemTraceNo, opts...,
 	)
 	if txn == nil {
-		fatal(fmt.Errorf("unsupported transaction type %q", req.TransactionType))
+		fatal(fmt.Errorf("unsupported record type %q", req.RecordType))
 	}
 	switch req.Action {
 	case "build":

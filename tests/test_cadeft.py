@@ -1,5 +1,9 @@
 from datetime import date
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 import cadeft
@@ -83,6 +87,23 @@ class TransactionTests(unittest.TestCase):
 
 
 class FileTests(unittest.TestCase):
+    def test_cli_build_reads_json_from_stdin(self):
+        eft_file = cadeft.NewFile(
+            cadeft.NewFileHeader("0000000001", 1, TEST_DATE, 610, "CAD"),
+            transactions()[:1],
+        )
+        result = subprocess.run(
+            [sys.executable, "-m", "cadeft", "--mode", "build"],
+            input=json.dumps(eft_file.to_dict()),
+            text=True,
+            capture_output=True,
+            cwd=ROOT,
+            env={**os.environ, "PYTHONPATH": str(ROOT)},
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(cadeft.Reader(result.stdout).read_file().txns), 1)
+
     def test_header_footer_file_roundtrip_and_filters(self):
         header = cadeft.NewFileHeader("0000000001", 1, TEST_DATE, 610, "CAD")
         txns = transactions()
