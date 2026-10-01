@@ -24,3 +24,7 @@ go.work
 coverage.txt
 gitleaks.tar.gz
 lint-project.sh
+
+# Python bytecode
+__pycache__/
+*.py[cod]
