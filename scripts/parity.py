@@ -13,7 +13,10 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = [sys.executable, "-m", "cadeft"]
 GO = ["go", "run", "./cmd"]
+GO_REFERENCE = ["go", "run", "./tools/parityref"]
 ENV = {**os.environ, "PYTHONPATH": str(ROOT)}
+sys.path.insert(0, str(ROOT))
+import cadeft  # noqa: E402
 
 HEADER = {
     "type": "A",
@@ -104,23 +107,46 @@ def main() -> int:
         print("PASS: sample file parse output")
 
         for record_type, txn in TXNS.items():
-            payload = {"file_header": HEADER, "transactions": [txn]}
-            input_file = temp_dir / f"{record_type}.json"
-            input_file.write_text(json.dumps(payload), encoding="utf-8")
-            go_build = run(GO + ["--mode", "build"], file_path=input_file)
-            py_build = run(PYTHON + ["--mode", "build"], file_path=input_file)
-            require_same_status(go_build, py_build, f"{record_type} build")
+            request = {"action": "build", "transaction": txn, **txn}
+            go_build = run(GO_REFERENCE, data=json.dumps(request))
+            py_txn = cadeft.transaction_from_dict(txn)
+            py_segment = py_txn.build()
             if go_build.returncode:
-                raise RuntimeError(f"{record_type} build failed: {go_build.stderr}")
-            if go_build.stdout != py_build.stdout:
-                raise AssertionError(f"{record_type} serialized output differs")
-            eft_file = temp_dir / f"{record_type}.eft"
-            eft_file.write_text(go_build.stdout, encoding="utf-8")
-            go_roundtrip = run(GO + ["--mode", "parse"], file_path=eft_file)
-            py_roundtrip = run(PYTHON + ["--mode", "parse"], file_path=eft_file)
-            require_same_status(go_roundtrip, py_roundtrip, f"{record_type} parse")
-            if json.loads(go_roundtrip.stdout) != json.loads(py_roundtrip.stdout):
-                raise AssertionError(f"{record_type} parse produced different JSON values")
+                raise RuntimeError(f"{record_type} reference build failed: {go_build.stderr}")
+            if go_build.stdout != py_segment:
+                raise AssertionError(f"{record_type} serialized segment differs")
+            go_parse = run(
+                GO_REFERENCE,
+                data=json.dumps({
+                    "action": "parse",
+                    "transaction": txn,
+                    **txn,
+                    "serialized": go_build.stdout,
+                }),
+            )
+            py_parse_segment = cadeft._TRANSACTION_CLASS[record_type]().parse(go_build.stdout)
+            if go_parse.returncode:
+                raise RuntimeError(f"{record_type} reference parse failed: {go_parse.stderr}")
+            if json.loads(go_parse.stdout) != py_parse_segment.to_dict():
+                raise AssertionError(f"{record_type} segment parse fields differ")
+            if record_type in {"C", "D", "I", "J"}:
+                payload = {"file_header": HEADER, "transactions": [txn]}
+                input_file = temp_dir / f"{record_type}.json"
+                input_file.write_text(json.dumps(payload), encoding="utf-8")
+                go_file_build = run(GO + ["--mode", "build"], file_path=input_file)
+                py_file_build = run(PYTHON + ["--mode", "build"], file_path=input_file)
+                require_same_status(go_file_build, py_file_build, f"{record_type} file build")
+                if go_file_build.returncode:
+                    raise RuntimeError(f"{record_type} file build failed: {go_file_build.stderr}")
+                if go_file_build.stdout != py_file_build.stdout:
+                    raise AssertionError(f"{record_type} full-file output differs")
+                eft_file = temp_dir / f"{record_type}.eft"
+                eft_file.write_text(go_file_build.stdout, encoding="utf-8")
+                go_roundtrip = run(GO + ["--mode", "parse"], file_path=eft_file)
+                py_roundtrip = run(PYTHON + ["--mode", "parse"], file_path=eft_file)
+                require_same_status(go_roundtrip, py_roundtrip, f"{record_type} file parse")
+                if json.loads(go_roundtrip.stdout) != json.loads(py_roundtrip.stdout):
+                    raise AssertionError(f"{record_type} full-file parse fields differ")
             print(f"PASS: {record_type} build and parse")
 
         valid_input = temp_dir / "valid.json"

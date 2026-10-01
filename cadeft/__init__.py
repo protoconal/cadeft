@@ -27,6 +27,12 @@ MAX_LINE_LENGTH = 1464
 COMMON_RECORD_DATA_LENGTH = 24
 SEGMENT_LENGTH = 240
 MAX_TXNS_PER_RECORD = 6
+RecordType = str
+TransactionType = str
+DCSign = str
+Transactions = list["Transaction"]
+BaseTxnOpt = Callable[[dict[str, str]], None]
+HeaderOpts = dict[str, str]
 
 _RECORD_TYPES = {
     DEBIT_RECORD,
@@ -130,7 +136,9 @@ def _json_date(value: date | datetime | None) -> str | None:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        result = value.isoformat(timespec="microseconds" if value.microsecond else "seconds")
+        result = re.sub(r"(\.\d*?)0+(?=[+-]|$)", r"\1", result)
+        return result.replace("+00:00", "Z")
     return datetime.combine(value, datetime.min.time(), timezone.utc).isoformat(
         timespec="seconds"
     ).replace("+00:00", "Z")
@@ -167,6 +175,8 @@ class RecordHeader:
             + pad_numeric(self.originator_id, 10)
             + zero_pad_number(self.file_creation_number, 4)
         )
+
+    Build = build
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -677,7 +687,16 @@ def _constructor(record_type: str, txn_type: str, amount: int,
                  txn_date: date | datetime | None, institution_id: str,
                  account_no: str, item_trace_no: str, short_name: str,
                  name: str, long_name: str, bank_id: str, bank_account: str,
-                 original_item_trace_no: str = "", **options: str) -> Transaction:
+                 original_item_trace_no: str = "", *opts: Any,
+                 **options: str) -> Transaction:
+    options = dict(options)
+    for option in opts:
+        if callable(option):
+            option(options)
+        elif isinstance(option, dict):
+            options.update(option)
+        else:
+            raise TypeError(f"unsupported transaction option: {option!r}")
     date_key = "date_funds_available" if record_type in {
         CREDIT_RECORD, CREDIT_REVERSE_RECORD, RETURN_CREDIT_RECORD
     } else "due_date"
@@ -702,64 +721,66 @@ def _constructor(record_type: str, txn_type: str, amount: int,
 def NewDebit(txn_type: str, amount: int, due_date: date | datetime | None,
              institution_id: str, payor_account_no: str, item_trace_no: str,
              originator_short_name: str, payor_name: str, originator_long_name: str,
-             return_institution_id: str, return_account_no: str, **options: str) -> Debit:
+             return_institution_id: str, return_account_no: str, *opts: Any,
+             **options: str) -> Debit:
     return _constructor(DEBIT_RECORD, txn_type, amount, due_date, institution_id,
                         payor_account_no, item_trace_no, originator_short_name, payor_name,
-                        originator_long_name, return_institution_id, return_account_no,
-                        **options)
+                        originator_long_name, return_institution_id, return_account_no, "",
+                        *opts, **options)
 
 
 def NewCredit(txn_type: str, amount: int, date_funds_available: date | datetime | None,
               institution_id: str, payee_account_no: str, item_trace_no: str,
               originator_short_name: str, payee_name: str, originator_long_name: str,
-              return_institution_id: str, return_account_no: str, **options: str) -> Credit:
+              return_institution_id: str, return_account_no: str, *opts: Any,
+              **options: str) -> Credit:
     return _constructor(CREDIT_RECORD, txn_type, amount, date_funds_available, institution_id,
                         payee_account_no, item_trace_no, originator_short_name, payee_name,
-                        originator_long_name, return_institution_id, return_account_no, **options)
+                        originator_long_name, return_institution_id, return_account_no, "", *opts, **options)
 
 
 def NewDebitReturn(txn_type: str, amount: int, due_date: date | datetime | None,
                    institution_id: str, payor_account_no: str, item_trace_no: str,
                    originator_short_name: str, payor_name: str, originator_long_name: str,
                    original_institution_id: str, original_account_no: str,
-                   original_item_trace_no: str, **options: str) -> DebitReturn:
+                   original_item_trace_no: str, *opts: Any, **options: str) -> DebitReturn:
     return _constructor(RETURN_DEBIT_RECORD, txn_type, amount, due_date, institution_id,
                         payor_account_no, item_trace_no, originator_short_name, payor_name,
                         originator_long_name, original_institution_id, original_account_no,
-                        original_item_trace_no, **options)
+                        original_item_trace_no, *opts, **options)
 
 
 def NewCreditReturn(txn_type: str, amount: int, date_funds_available: date | datetime | None,
                     institution_id: str, payee_account_no: str, item_trace_no: str,
                     originator_short_name: str, payee_name: str, originator_long_name: str,
                     original_institution_id: str, original_account_no: str,
-                    original_item_trace_no: str, **options: str) -> CreditReturn:
+                    original_item_trace_no: str, *opts: Any, **options: str) -> CreditReturn:
     return _constructor(RETURN_CREDIT_RECORD, txn_type, amount, date_funds_available, institution_id,
                         payee_account_no, item_trace_no, originator_short_name, payee_name,
                         originator_long_name, original_institution_id, original_account_no,
-                        original_item_trace_no, **options)
+                        original_item_trace_no, *opts, **options)
 
 
 def NewCreditReverse(txn_type: str, amount: int, date_funds_available: date | datetime | None,
                      institution_id: str, payee_account_no: str, item_trace_no: str,
                      originator_short_name: str, payee_name: str, originator_long_name: str,
                      return_institution_id: str, return_account_no: str,
-                     original_item_trace_no: str, **options: str) -> CreditReverse:
+                     original_item_trace_no: str, *opts: Any, **options: str) -> CreditReverse:
     return _constructor(CREDIT_REVERSE_RECORD, txn_type, amount, date_funds_available, institution_id,
                         payee_account_no, item_trace_no, originator_short_name, payee_name,
                         originator_long_name, return_institution_id, return_account_no,
-                        original_item_trace_no, **options)
+                        original_item_trace_no, *opts, **options)
 
 
 def NewDebitReverse(txn_type: str, amount: int, due_date: date | datetime | None,
                     institution_id: str, payor_account_no: str, item_trace_no: str,
                     originator_short_name: str, payor_name: str, originator_long_name: str,
                     return_institution_id: str, return_account_no: str,
-                    original_item_trace_no: str, **options: str) -> DebitReverse:
+                    original_item_trace_no: str, *opts: Any, **options: str) -> DebitReverse:
     return _constructor(DEBIT_REVERSE_RECORD, txn_type, amount, due_date, institution_id,
                         payor_account_no, item_trace_no, originator_short_name, payor_name,
                         originator_long_name, return_institution_id, return_account_no,
-                        original_item_trace_no, **options)
+                        original_item_trace_no, *opts, **options)
 
 
 @dataclass
@@ -832,6 +853,22 @@ class FileHeader:
             "currency_code": self.currency_code,
         }
 
+    @property
+    def originator_id(self) -> str:
+        return self.record_header.originator_id
+
+    @originator_id.setter
+    def originator_id(self, value: str) -> None:
+        self.record_header.originator_id = value
+
+    @property
+    def record_type(self) -> str:
+        return self.record_header.record_type
+
+    @property
+    def file_creation_number(self) -> int:
+        return self.record_header.file_creation_number
+
     Parse = parse
     Build = build
     Validate = validate
@@ -839,7 +876,14 @@ class FileHeader:
 
 def NewFileHeader(originator_id: str, file_creation_number: int,
                   creation_date: date | datetime | None, destination_data_center: int,
-                  currency_code: str, **options: str) -> FileHeader:
+                  currency_code: str, *opts: Any, **options: str) -> FileHeader:
+    for option in opts:
+        if isinstance(option, dict):
+            options.update(option)
+        elif callable(option):
+            option(options)
+        else:
+            raise TypeError(f"unsupported header option: {option!r}")
     return FileHeader(
         RecordHeader(HEADER_RECORD, originator_id, file_creation_number, 1),
         creation_date,
@@ -912,6 +956,9 @@ class FileFooter:
             + filler(1352)
         )
 
+    def get_type(self) -> str:
+        return FOOTER_RECORD
+
     def to_dict(self) -> dict[str, Any]:
         return {
             **self.record_header.to_dict(),
@@ -925,8 +972,21 @@ class FileFooter:
             "total_count_reverse_credit": self.total_count_reverse_credit,
         }
 
+    @property
+    def originator_id(self) -> str:
+        return self.record_header.originator_id
+
+    @property
+    def record_type(self) -> str:
+        return self.record_header.record_type
+
+    @property
+    def file_creation_number(self) -> int:
+        return self.record_header.file_creation_number
+
     Parse = parse
     Build = build
+    GetType = get_type
 
 
 def NewFileFooter(record_header: RecordHeader, txns: list[Transaction]) -> FileFooter:
@@ -1030,10 +1090,35 @@ class File:
 
     Create = create
     Validate = validate
+    GetAllDebitTxns = get_all_debit_txns
+    GetAllCredits = get_all_credits
+    GetAllDebitReturns = get_all_debit_returns
+    GetAllCreditReturns = get_all_credit_returns
 
 
 def NewFile(header: FileHeader, txns: list[Transaction]) -> File:
     return File(header, txns)
+
+
+def NewReader(source: str | bytes | TextIO | BinaryIO) -> Reader:
+    return Reader(source)
+
+
+def NewFileStream(source: str | TextIO | BinaryIO) -> FileStreamer:
+    return FileStreamer(source)
+
+
+new_debit = NewDebit
+new_credit = NewCredit
+new_debit_return = NewDebitReturn
+new_credit_return = NewCreditReturn
+new_debit_reverse = NewDebitReverse
+new_credit_reverse = NewCreditReverse
+new_file = NewFile
+new_file_header = NewFileHeader
+new_file_footer = NewFileFooter
+new_reader = NewReader
+new_file_stream = NewFileStream
 
 
 def transaction_from_dict(value: dict[str, Any]) -> Transaction:
@@ -1057,7 +1142,7 @@ def file_from_dict(value: dict[str, Any]) -> File:
             header_data.get("type", ""),
             header_data.get("originator_id", ""),
             header_data.get("file_creation_number", 0),
-            header_data.get("record_count", 1),
+            header_data.get("record_count", 0),
         )
         header = FileHeader(
             rh,
@@ -1208,12 +1293,16 @@ def NewTransaction(record_type: str, txn_type: str, amount: int,
                    txn_date: date | datetime | None, institution_id: str,
                    account_no: str, item_trace_no: str, short_name: str,
                    name: str, long_name: str, bank_id: str, bank_account: str,
-                   original_item_trace_no: str = "", **options: str) -> Transaction | None:
+                   original_item_trace_no: str = "", *opts: Any,
+                   **options: str) -> Transaction | None:
     if record_type not in _TRANSACTION_CLASS:
         return None
     return _constructor(record_type, txn_type, amount, txn_date, institution_id, account_no,
                         item_trace_no, short_name, name, long_name, bank_id, bank_account,
-                        original_item_trace_no, **options)
+                        original_item_trace_no, *opts, **options)
+
+
+new_transaction = NewTransaction
 
 
 def Ptr(value: Any) -> Any:
@@ -1263,9 +1352,14 @@ __all__ = [
     "File", "FileFooter", "FileHeader", "FileStreamer", "FOOTER_RECORD",
     "HEADER_RECORD", "NewCredit", "NewCreditReturn", "NewCreditReverse", "NewDebit",
     "NewDebitReturn", "NewDebitReverse", "NewFile", "NewFileFooter", "NewFileHeader",
-    "NewTransaction", "ParseError", "Ptr", "Reader", "RecordHeader",
+    "NewFileStream", "NewReader", "NewTransaction", "ParseError", "Ptr", "Reader",
+    "RecordHeader", "RecordType", "TransactionType", "DCSign", "Transactions",
+    "BaseTxnOpt", "HeaderOpts",
     "RETURN_CREDIT_RECORD", "RETURN_DEBIT_RECORD", "Transaction", "ValidationError",
     "WithCrossRefNo", "WithDirectClearerCommunicationArea", "WithInvalidDataElementID",
     "WithSettlementCode", "WithStoredTransactionType", "WithSundryInfo", "WithUserID",
     "file_from_dict", "normalize", "parse_date", "parse_num", "transaction_from_dict",
+    "new_credit", "new_credit_return", "new_credit_reverse", "new_debit",
+    "new_debit_return", "new_debit_reverse", "new_file", "new_file_footer",
+    "new_file_header", "new_file_stream", "new_reader", "new_transaction",
 ]

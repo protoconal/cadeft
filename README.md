@@ -161,6 +161,28 @@ if err != nil {
 fmt.Printf("%s", serializedFile)
 ```
 
+## Python implementation
+
+The repository also includes a standard-library-only Python implementation in `cadeft/`.
+It supports the six transaction record types, fixed-width parsing and serialization,
+validation, whole-file reading, streaming, JSON conversion, and file creation.
+
+```python
+from datetime import date
+from cadeft import NewCredit, NewFile, NewFileHeader
+
+header = NewFileHeader("1234567890", 1, date.today(), 610, "CAD")
+txn = NewCredit(
+    "450", 420, date.today(), "123456789", "12345", "222222222222222",
+    "Originator", "Payee", "Originator long name", "987654321", "54321",
+)
+eft_text = NewFile(header, [txn]).create()
+```
+
+Run its tests with `python -m unittest discover -s tests`. Run `python scripts/parity.py`
+to compare Python parsing and serialization against the Go implementation using the
+sample EFT file and all six record types. The parity tool also compares validation and
+malformed-input success/failure outcomes; it requires Go to be installed.
 
 ## Project status
 

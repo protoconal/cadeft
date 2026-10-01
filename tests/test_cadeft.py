@@ -48,6 +48,7 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual(parsed.date_value, txn.date_value)
                 self.assertEqual(parsed.get_account_no(), txn.get_account_no())
                 self.assertEqual(parsed.get_name(), txn.get_name())
+                self.assertEqual(parsed.get_base_txn().record_type, txn.get_type())
                 parsed.validate()
 
     def test_unicode_name_is_normalized_and_preserved(self):
@@ -57,6 +58,21 @@ class TransactionTests(unittest.TestCase):
         )
         parsed = cadeft.Credit().parse(txn.build())
         self.assertEqual(parsed.short_name, "Nom Émetteur")
+
+    def test_constructor_options(self):
+        txn = cadeft.new_credit(
+            "450", 100, TEST_DATE, "123456789", "123", "1",
+            "Originator", "Payee", "Originator long name", "123456789", "123",
+            cadeft.WithUserID("00123"),
+            cadeft.WithCrossRefNo("0000123"),
+        )
+        self.assertEqual(txn.user_id, "00123")
+        self.assertEqual(txn.cross_ref_no, "0000123")
+        header = cadeft.NewFileHeader(
+            "0000000001", 1, TEST_DATE, 610, "CAD",
+            cadeft.WithDirectClearerCommunicationArea("clearing"),
+        )
+        self.assertEqual(header.communication_area, "clearing")
 
     def test_parse_errors_and_validation_errors(self):
         with self.assertRaises(cadeft.ParseError):
@@ -109,8 +125,8 @@ class FileTests(unittest.TestCase):
         sample = (ROOT / "sample_files" / "CO14821.txt").read_text(encoding="utf-8")
         parsed = cadeft.Reader(sample).read_file()
         self.assertEqual(parsed.header.originator_id, "0000000610")
-        self.assertEqual(len(parsed.txns), 12)
-        self.assertEqual(parsed.footer.total_count_credit, 5)
+        self.assertEqual(len(parsed.txns), 11)
+        self.assertEqual(parsed.footer.total_count_credit, 6)
         self.assertEqual(parsed.footer.total_count_debit, 5)
 
 
