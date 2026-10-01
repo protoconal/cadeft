@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta, timezone
-import json
 import re
 import unicodedata
 from typing import Any, BinaryIO, Callable, TextIO
@@ -83,8 +82,8 @@ def parse_date(value: str) -> date:
     if len(value) != 6:
         raise ValueError("date string is not valid length")
     try:
-        year = int("20" + value[1:3])
-        day_of_year = int(value[3:])
+        year = parse_num("20" + value[1:3])
+        day_of_year = parse_num(value[3:])
         return date(year, 1, 1) + timedelta(days=day_of_year - 1)
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"invalid EFT date: {value}") from exc
@@ -338,20 +337,15 @@ class Transaction(BaseTxn):
         chars = list(segment)
         if len(chars) != SEGMENT_LENGTH:
             raise ParseError("transaction record is not 240 characters")
+        self.txn_type = "".join(chars[0:3])
         try:
-            self.txn_type = "".join(chars[0:3])
             self.amount = parse_num("".join(chars[3:13]))
+        except ValueError as exc:
+            raise ParseError(f"failed to parse amount: {exc}") from exc
+        try:
             self.date_value = parse_date("".join(chars[13:19]))
         except ValueError as exc:
-            message = "failed to parse amount" if chars[3:13] and not chars[13:19] else ""
-            if chars[3:13]:
-                try:
-                    parse_num("".join(chars[3:13]))
-                except ValueError:
-                    message = "failed to parse amount"
-                else:
-                    message = self.DATE_ERROR
-            raise ParseError(f"{message}: {exc}".strip(": ")) from exc
+            raise ParseError(f"{self.DATE_ERROR}: {exc}") from exc
         self.institution_id = "".join(chars[19:28])
         self.account_no = "".join(chars[28:40]).strip()
         self.item_trace_no = "".join(chars[40:62])
@@ -388,11 +382,11 @@ class Transaction(BaseTxn):
                 errors.append(f"{name} exceeds max length {maximum}")
 
         def numeric(name: str, value: str) -> None:
-            if value and not re.fullmatch(r"\d+", value):
+            if value and not re.fullmatch(r"[0-9]+", value):
                 errors.append(f"{name} must be numeric")
 
         def alpha(name: str, value: str) -> None:
-            if value and not re.fullmatch(r"[\w\-\s]+", value, re.UNICODE):
+            if value and not re.fullmatch(r"[A-Za-z0-9_\-\t\n\f\r ]+", value):
                 errors.append(f"{name} must contain EFT alphanumeric characters")
 
         required("txn_type", self.txn_type)
@@ -829,7 +823,7 @@ class FileHeader:
             errors.append("missing originator ID")
         if len(rh.originator_id) != 10:
             errors.append("originator ID must be 10 characters")
-        if rh.originator_id and not re.fullmatch(r"[\w\-\s]+", rh.originator_id, re.UNICODE):
+        if rh.originator_id and not re.fullmatch(r"[A-Za-z0-9_\-\t\n\f\r ]+", rh.originator_id):
             errors.append("originator ID must be alphanumeric")
         if rh.file_creation_number == 0 or rh.file_creation_number > 9999:
             errors.append("invalid file creation number")
@@ -934,7 +928,13 @@ class FileFooter:
         values = []
         for start, end in offsets:
             piece = "".join(chars[start:end])
-            values.append(0 if not piece.strip() else parse_num(piece))
+            if not piece.strip():
+                values.append(0)
+                continue
+            try:
+                values.append(parse_num(piece))
+            except ValueError as exc:
+                raise ParseError(f"failed to parse footer total at {start}:{end}: {exc}") from exc
         (
             self.total_value_debit, self.total_count_debit,
             self.total_value_credit, self.total_count_credit,

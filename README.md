@@ -182,7 +182,9 @@ eft_text = NewFile(header, [txn]).create()
 Run its tests with `python -m unittest discover -s tests`. Run `python scripts/parity.py`
 to compare Python parsing and serialization against the Go implementation using the
 sample EFT file and all six record types. The parity tool also compares validation and
-malformed-input success/failure outcomes; it requires Go to be installed.
+malformed-input success/failure outcomes; it requires Go to be installed. File creation
+groups records by type while retaining first-seen type order and input order within each
+type, making output deterministic despite the Go implementation's map iteration order.
 
 ## Project status
 
