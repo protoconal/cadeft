@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Compare the Python port with the Go CLI using only standard-library tooling."""
+"""Compare this package with the original Go implementation at a pinned commit.
+
+The Go reference (https://github.com/moov-io/cadeft) is cloned at GO_REFERENCE_COMMIT
+into a cache directory (override with CADEFT_GO_REF_DIR; pick another
+commit with CADEFT_GO_REF_COMMIT). Requires git and Go;
+the tests are skipped when either is unavailable.
+"""
 
 from __future__ import annotations
 
@@ -8,12 +14,20 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shutil
 import tempfile
+import unittest
+
+GO_REFERENCE_REPO = "https://github.com/moov-io/cadeft"
+# Default pin; CI overrides it with CADEFT_GO_REF_COMMIT to test every upstream commit.
+GO_REFERENCE_COMMIT = os.environ.get("CADEFT_GO_REF_COMMIT", "a81ef5be6d954dc2bb9cf4f6079ea7e595186c84")
 
 ROOT = Path(__file__).resolve().parents[1]
+PARITYREF_SRC = Path(__file__).resolve().parent / "reference" / "parityref"
 PYTHON = [sys.executable, "-m", "cadeft"]
 GO = ["go", "run", "./cmd"]
 GO_REFERENCE = ["go", "run", "./tools/parityref"]
+GO_DIR = ROOT
 ENV = {**os.environ, "PYTHONPATH": str(ROOT)}
 sys.path.insert(0, str(ROOT))
 import cadeft  # noqa: E402
@@ -79,9 +93,32 @@ TXNS = {
 }
 
 
+def prepare_go_reference() -> Path:
+    """Check out the pinned Go commit and install the parity helper into it."""
+    default = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "cadeft-go-reference"
+    target = Path(os.environ.get("CADEFT_GO_REF_DIR", default)) / GO_REFERENCE_COMMIT
+    if not (target / ".git").is_dir():
+        target.mkdir(parents=True, exist_ok=True)
+        for args in (
+            ["init", "-q"],
+            ["remote", "add", "origin", GO_REFERENCE_REPO],
+            ["fetch", "-q", "--depth", "1", "origin", GO_REFERENCE_COMMIT],
+            ["checkout", "-q", "FETCH_HEAD"],
+        ):
+            subprocess.run(["git", *args], cwd=target, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=target, text=True, capture_output=True, check=True)
+    if head.stdout.strip() != GO_REFERENCE_COMMIT:
+        raise RuntimeError(f"{target} is not at {GO_REFERENCE_COMMIT}")
+    helper = target / "tools" / "parityref"
+    shutil.rmtree(helper, ignore_errors=True)
+    shutil.copytree(PARITYREF_SRC, helper)
+    return target
+
+
 def run(command: list[str], *, file_path: Path | None = None, data: str | None = None) -> subprocess.CompletedProcess[str]:
     args = command + (["--file", str(file_path)] if file_path else [])
-    return subprocess.run(args, input=data, text=True, capture_output=True, cwd=ROOT, env=ENV, check=False)
+    cwd = ROOT if command[0] == sys.executable else GO_DIR
+    return subprocess.run(args, input=data, text=True, capture_output=True, cwd=cwd, env=ENV, check=False)
 
 
 def require_same_status(go_result: subprocess.CompletedProcess[str], py_result: subprocess.CompletedProcess[str], label: str) -> None:
@@ -177,5 +214,16 @@ def main() -> int:
     return 0
 
 
+@unittest.skipUnless(shutil.which("go") and shutil.which("git"), "git and go are required")
+class GoParityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        global GO_DIR
+        GO_DIR = prepare_go_reference()
+
+    def test_parity_with_go_reference(self):
+        self.assertEqual(main(), 0)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    unittest.main()

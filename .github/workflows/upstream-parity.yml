@@ -1,0 +1,103 @@
+name: Upstream parity
+
+# Replays every upstream moov-io/cadeft commit against this package and reports pass/fail.
+on:
+  workflow_dispatch:
+  workflow_call:
+  schedule:
+    - cron: "0 6 1 */3 *"
+  pull_request:
+    paths:
+      - "cadeft/**"
+      - "tests/**"
+      - ".github/workflows/upstream-parity.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: List upstream commits
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/moov-io/cadeft/commits?sha=master&per_page=100" \
+            --jq '.[] | {sha: .sha, subject: (.commit.message | split("\n")[0])}' \
+            | jq -sc '{include: .}' > matrix.json
+          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
+
+  parity:
+    name: ${{ matrix.sha }}
+    needs: commits
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.commits.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      - name: Parity test against upstream commit
+        id: parity
+        env:
+          CADEFT_GO_REF_COMMIT: ${{ matrix.sha }}
+        run: python -m unittest tests.test_parity -v
+
+      - name: Record result
+        if: always()
+        env:
+          SHA: ${{ matrix.sha }}
+          SUBJECT: ${{ matrix.subject }}
+          OUTCOME: ${{ steps.parity.outcome }}
+        run: |
+          mkdir -p result
+          jq -n --arg sha "$SHA" --arg subject "$SUBJECT" --arg outcome "$OUTCOME" \
+            '{sha: $sha, subject: $subject, outcome: $outcome}' > "result/$SHA.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: parity-${{ matrix.sha }}
+          path: result/
+
+  report:
+    name: Parity report
+    needs: parity
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: parity-*
+          merge-multiple: true
+          path: results
+
+      - name: Build report
+        run: |
+          {
+            echo "| Upstream commit | Subject | Result |"
+            echo "|---|---|---|"
+            jq -rs 'sort_by(.sha) | .[] |
+              "| [`\(.sha[0:8])`](https://github.com/moov-io/cadeft/commit/\(.sha)) | \(.subject | gsub("\\|"; "/")) | \(if .outcome == "success" then "✅ pass" else "❌ fail" end) |"' results/*.json
+          } | tee parity-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parity-report
+          path: parity-report.md

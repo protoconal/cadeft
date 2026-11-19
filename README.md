@@ -1,221 +1,111 @@
 # cadeft
 
-[![Moov Banner Logo](https://user-images.githubusercontent.com/20115216/104214617-885b3c80-53ec-11eb-8ce0-9fc745fb5bfc.png)](https://github.com/moov-io)
+[![Python](https://github.com/protoconal/cadeft/actions/workflows/python.yml/badge.svg)](https://github.com/protoconal/cadeft/actions/workflows/python.yml)
+[![Upstream parity](https://github.com/protoconal/cadeft/actions/workflows/upstream-parity.yml/badge.svg)](https://github.com/protoconal/cadeft/actions/workflows/upstream-parity.yml)
+[![Apache 2 License](https://img.shields.io/badge/license-Apache2-blue.svg)](LICENSE)
 
-<p align="center">
-  <a href="https://slack.moov.io/">Community</a>
-  ·
-  <a href="https://moov.io/blog/">Blog</a>
-  <br>
-</p>
+`cadeft` is a dependency-free Python library for reading and writing Electronic Funds Transfer (EFT) files
+following the [Payments Canada 005 specification](https://www.payments.ca/sites/default/files/standard005eng.pdf).
 
-[![GoDoc](https://godoc.org/github.com/moov-io/cadeft?status.svg)](https://godoc.org/github.com/moov-io/cadeft)
-[![Build Status](https://github.com/moov-io/cadeft/workflows/Go/badge.svg)](https://github.com/moov-io/cadeft/actions)
-[![Coverage Status](https://codecov.io/gh/moov-io/cadeft/branch/master/graph/badge.svg)](https://codecov.io/gh/moov-io/cadeft)
-[![Go Report Card](https://goreportcard.com/badge/github.com/moov-io/cadeft)](https://goreportcard.com/report/github.com/moov-io/cadeft)
-[![Repo Size](https://img.shields.io/github/languages/code-size/moov-io/cadeft?label=project%20size)](https://github.com/moov-io/cadeft)
-[![Apache 2 License](https://img.shields.io/badge/license-Apache2-blue.svg)](https://raw.githubusercontent.com/moov-io/ach/master/LICENSE)
-[![Slack Channel](https://slack.moov.io/badge.svg?bg=e01563&fgColor=fffff)](https://slack.moov.io/)
-[![GitHub Stars](https://img.shields.io/github/stars/moov-io/cadeft)](https://github.com/moov-io/cadeft)
-[![Twitter](https://img.shields.io/twitter/follow/moov?style=social)](https://twitter.com/moov?lang=en)
+It is a Python port of [moov-io/cadeft](https://github.com/moov-io/cadeft) (Go), originally developed by
+Moov.IO with major contributions from [Synctera](https://synctera.com/). See [Attribution](#attribution).
 
-Moov's mission is to give developers an easy way to create and integrate bank processing into their own software products. Our open source projects are each focused on solving a single responsibility in financial services and designed around performance, scalability, and ease of use.
+## Installation
 
-## Description
-`cadeft` is a parser library designed for parsing and generating Electronic Funds Transfer (EFT) files adhereing to the [Payments Canada 005 specification](https://www.payments.ca/sites/default/files/standard005eng.pdf).
-
-### Reading EFT files
-There are 2 options to read files either `cadeft.Reader` or `cadeft.FileStreamer`
-#### `cadeft.Reader`
-
-Reader will attempt to read all transactions from an EFT file and return a populated `cadeft.File` struct or a collection of errors encountered during parsing.
-```go
-file, err := os.Open("./eft_file.txt")
-if err != nil {
-  return err
-}
-
-// Create a new reader passing an io.Reader
-reader := cadeft.NewReader(file)
-
-// attempt to read the file
-eftFile, err := reader.ReadFile()
-if err != nil {
-  return err
-}
-
-// print out all transers or handle the file
-for _, txn := range eftFile.Txns {
-  fmt.Printf("%+v", txn)
-}
+```sh
+pip install cadeft
 ```
 
-#### `cadeft.FileStreamer`
-`cadeft.FileStreamer` will read one transaction from a file at a time or return an error. Consecutive calls to `ScanTxn()` will read the next transaction or return an error. `FileStreamer` will keep state of the parser's position and return new transactions every call. This allows the caller to either ignore errors that have surfaced when parsing/validating a transaction and construct their own array of `cadeft.Transaction` structs. You can also call `Validate()` on a `cadeft.Transaction` struct which will validate all fields against the Payments Canada 005 Spec.
-```go
-file, err := os.Open("./eft_file.txt")
-if err != nil {
-  return err
-}
+Requires Python 3.10+.
 
-// instantiate a new FileStreamer
-stramer := cadeft.NewFileStreamer(file)
+## Reading EFT files
 
-// start reading the file
-for {
-  // every iteration a new transaction is returned or an error
-  txn, err := fileStreamer.ScanTxn()
-		if err != nil {
-            // an io.EOF is returned when parsing is complete
-			if err == io.EOF {
-				break
-			}
+`cadeft.Reader` reads a whole file and returns a `cadeft.File`:
 
-            // handle the parse error as you want
-			var parseErr *cadeft.ParseError
-			if ok := errors.As(err, &parseErr); ok {
-				log.Err(parseErr).Msg("encountered parse error when processing incoming file")
-				continue
-			} else {
-				log.Err(err).Msg("fatal error when streaming transaction from file")
-				return err
-			}
-		}
+```python
+import cadeft
 
-  // validate that the parsed txn is valid
-  err = txn.Validate()
-  if err != nil {
-    return err
-  }
-}
+with open("eft_file.txt", encoding="utf-8") as f:
+    eft_file = cadeft.Reader(f).read_file()
 
+for txn in eft_file.txns:
+    print(txn)
 ```
 
-NOTE: Because `ScanTxn` keeps track of the parser's state it is not concurrency-safe if you want to incorporate some level of concurrency make sure the call to `ScanTxn()` is outside of a go routine like so:
-```go
-...
-fileStreamer := cadeft.NewFileStreamer(file)
+`cadeft.FileStreamer` yields one transaction per `scan_txn()` call, so parse errors can be handled per
+transaction. `EndOfFile` signals completion and `ParseError` a malformed record:
 
-wg := sync.WaitGroup{}
-batchSize := 10
-guard := make(chan struct{}, batchSize)
-
-for {
-  txn, err := fileStreamer.ScanTxn()
-  if err != nil {
-    // handle the error any which way you want
-  }
-
-  // read transactions into memory and concurrently handle each txn
-  guard <- struct{}{}
-  wg.Add(1)
-  go func() {
-    defer func() {
-      wg.Done()
-      <-guard
-    }()
-    // do your thing...
-  }
-  wg.Wait()
-}
+```python
+with open("eft_file.txt", encoding="utf-8") as f:
+    streamer = cadeft.FileStreamer(f)
+    while True:
+        try:
+            txn = streamer.scan_txn()
+        except cadeft.EndOfFile:
+            break
+        except cadeft.ParseError as err:
+            print("parse error:", err)
+            continue
+        txn.validate()
 ```
 
-## Write EFT Files
-To write an EFT file construct a `cadeft.File` struct with the appropriate `Header`, `Footer` and `[]Transactions`. You can confirm that your file is valid by calling `File.Validate()` or `Validate()` on the `Header`, `Footer` and each individual `Transaction`.
-```go
-// create the file header
-header := cadeft.NewFileHeader("123456789", 1, time.Now(), int64(610), "CAD")
+`FileStreamer` keeps parser state and is not thread-safe; call `scan_txn()` from a single thread and hand
+the resulting transactions to workers.
 
-// create a transaction, in this case it's a credit transaction
-txn := cadeft.NewTransaction(
-  cadeft.CreditRecord, // recod type
-  "450", // transaction code
-  420, // amount
-  Ptr(time.Now()), // date
-  "123456789", // institution ID
-  "12345", // account number
-  "222222222222222", // item trace nnumber
-  "payor name", // payor/payee name
-  "payor long name", // payor/payee long name
-  "987654321", // return institution ID
-  "54321", // return account number
-  "", // original item trace number (only used for returns)
-  cadeft.WithCrossRefNo("0000100000024"), // cross ref number (optional)
-)
-
-// create a new cadeft.File instance with header and txn
-file := cadeft.NewFile(header, cadeft.Transactions{txn})
-if err := file.Validate(); err != nil {
-  // file does not adhere to the 005 spec
-  return err
-}
-
-// serialize the file into payments canada 005 spec
-serializedFile, err := file.Create()
-if err != nil {
-  // error when writing the file
-  return err
-}
-
-// write the serialized string to a file or print it out
-fmt.Printf("%s", serializedFile)
-```
-
-## Python implementation
-
-The repository also includes a standard-library-only Python implementation in `cadeft/`.
-It supports the six transaction record types, fixed-width parsing and serialization,
-validation, whole-file reading, streaming, JSON conversion, and file creation.
+## Writing EFT files
 
 ```python
 from datetime import date
-from cadeft import NewCredit, NewFile, NewFileHeader
+import cadeft
 
-header = NewFileHeader("1234567890", 1, date.today(), 610, "CAD")
-txn = NewCredit(
+header = cadeft.NewFileHeader("123456789", 1, date.today(), 610, "CAD")
+txn = cadeft.NewCredit(
     "450", 420, date.today(), "123456789", "12345", "222222222222222",
-    "Originator", "Payee", "Originator long name", "987654321", "54321",
+    "payor name", "payee name", "payor long name", "987654321", "54321",
+    cadeft.WithCrossRefNo("0000100000024"),
 )
-eft_text = NewFile(header, [txn]).create()
+
+eft_file = cadeft.NewFile(header, [txn])
+eft_file.validate()  # raises cadeft.ValidationError if the file breaks the 005 spec
+print(eft_file.create())
 ```
 
-Run its tests with `python -m unittest discover -s tests`. Run `python scripts/parity.py`
-to compare Python parsing and serialization against the Go implementation using the
-sample EFT file and all six record types. The parity tool also compares validation and
-malformed-input success/failure outcomes; it requires Go to be installed. File creation
-groups records by type while retaining first-seen type order and input order within each
-type, making output deterministic despite the Go implementation's map iteration order.
+## Command line
+
+```sh
+python -m cadeft --mode parse --file eft_file.txt            # EFT -> JSON
+python -m cadeft --mode build --validate --file input.json   # JSON -> EFT
+```
+
+## Testing
+
+```sh
+python -m unittest discover -s tests
+```
+
+`tests/test_parity.py` checks this package against the original Go implementation at a pinned upstream
+commit (`GO_REFERENCE_COMMIT`), which it clones automatically; it needs `git` and `go` and is skipped
+otherwise. Set `CADEFT_GO_REF_COMMIT` to test another upstream commit.
+
+CI (`upstream-parity.yml`) replays **every** upstream `moov-io/cadeft` commit quarterly (and on pull requests and manual dispatch),
+and publishes a pass/fail table per commit in the run summary. The release workflow attaches that report
+to each GitHub release.
+
+## Releasing
+
+Update the version in `pyproject.toml` and `CHANGELOG.md`, then push a tag (`git tag v0.2.0 && git push origin v0.2.0`).
+The release workflow runs the parity suite, builds the package, creates the GitHub release, and publishes
+to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/) (configure the `pypi` environment).
 
 ## Project status
 
 cadeft is currently being developed for use in multiple production environments. The library was developed in large part by [Synctera](https://synctera.com/). Please star the project if you are interested in its progress. Let us know if you encounter any bugs/unclear documentation or have feature suggestions by opening up an issue or pull request. Thanks!
 
-## Getting help
+## Attribution
 
-| channel                                                    | info                                                                                                                                    |
-|------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| [Project Documentation](https://moov-io.github.io/cadeft/) | Our project documentation available online.                                                                                             |
-| Twitter [@moov](https://twitter.com/moov)                  | You can follow Moov.io's Twitter feed to get updates on our project(s). You can also tweet us questions or just share blogs or stories. |
-| [GitHub Issue](https://github.com/moov-io/cadeft/issues)   | If you are able to reproduce a problem please open a GitHub Issue under the specific project that caused the error.                     |
-| [moov-io slack](https://slack.moov.io/)                    | Join our slack channel (`#cadeft`) to have an interactive discussion about the development of the project.                              |
-
-## Supported and tested platforms
-
-- 64-bit Linux (Ubuntu, Debian), macOS, and Windows
-
-## Contributing
-
-Yes please! Please review our [Contributing guide](CONTRIBUTING.md) and [Code of Conduct](https://github.com/moov-io/ach/blob/master/CODE_OF_CONDUCT.md) to get started!
-
-This project uses [Go Modules](https://go.dev/blog/using-go-modules) and Go v1.20 or newer. See [Golang's install instructions](https://golang.org/doc/install) for help setting up Go. You can download the source code and we offer [tagged and released versions](https://github.com/moov-io/cadeft/releases/latest) as well. We highly recommend you use a tagged release for production.
-
-### Releasing
-
-To make a release of cadeft simply open a pull request with `CHANGELOG.md` and `version.go` updated with the next version number and details. You'll also need to push the tag (i.e. `git push origin v1.0.0`) to origin in order for CI to make the release.
-
-### Testing
-
-We maintain a comprehensive suite of unit tests and recommend table-driven testing when a particular function warrants several very similar test cases. After starting the services with Docker Compose run all tests with `go test ./...`. Current overall coverage can be found on [Codecov](https://app.codecov.io/gh/moov-io/cadeft/).
+This project is a derivative work of [moov-io/cadeft](https://github.com/moov-io/cadeft),
+Copyright 2023 Moov.IO, licensed under the Apache License 2.0. The Go sources were re-implemented in
+Python. See [NOTICE](NOTICE).
 
 ## License
 

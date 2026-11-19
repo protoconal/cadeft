@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__version__ = "0.2.0"
+
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta, timezone
 import re
@@ -460,7 +462,7 @@ class Transaction(BaseTxn):
             result["original_item_trace_no"] = self.original_item_trace_no
         return result
 
-    # Keep Go API spellings available for straightforward porting.
+    # Aliases preserving the upstream CamelCase API spellings.
     Build = build
     Parse = parse
     Validate = validate
@@ -1006,8 +1008,8 @@ class File:
         output = [self.header.build()]
         current_line += 1
         txns = self.txns or []
-        # The Go implementation groups records by type. Keep first-seen type ordering,
-        # which is stable across runtimes unlike Go map iteration.
+        # Records are grouped by type. Keep first-seen type ordering for deterministic output,
+        # matching the upstream reference implementation.
         grouped: dict[str, list[Transaction]] = {}
         for index, txn in enumerate(txns):
             if txn.get_type() not in _RECORD_TYPES:
