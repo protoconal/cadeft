@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cadeft"
+version = "0.2.0"
+description = "Python library for reading and writing Payments Canada Standard 005 EFT files"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["eft", "payments canada", "standard 005", "banking"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.scripts]
+cadeft = "cadeft.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/protoconal/cadeft"
+Issues = "https://github.com/protoconal/cadeft/issues"
+Upstream = "https://github.com/moov-io/cadeft"
+
+[tool.setuptools]
+packages = ["cadeft"]
+
+[tool.setuptools.package-data]
+cadeft = ["py.typed"]

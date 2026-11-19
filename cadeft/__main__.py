@@ -1,4 +1,4 @@
-"""Command-line interface compatible with the Go cadeft utility."""
+"""Command-line interface for cadeft."""
 
 from __future__ import annotations
 

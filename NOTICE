@@ -1,0 +1,11 @@
+cadeft (Python)
+Copyright 2023 Moov.IO (original Go implementation)
+
+This package is a Python port of cadeft (https://github.com/moov-io/cadeft),
+originally developed by Moov.IO with major contributions from Synctera, and
+licensed under the Apache License, Version 2.0. This port is a derivative work
+and is distributed under the same license; see LICENSE.
+
+Changes: the Go implementation was re-implemented in Python, and the Go sources
+were removed. Behaviour is verified against the original Go implementation
+by the tests in tests/test_parity.py.
