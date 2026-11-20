@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta, timezone
