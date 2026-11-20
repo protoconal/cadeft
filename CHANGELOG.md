@@ -1,3 +1,7 @@
+## v0.3.0
+
+Test Publishing
+
 ## v0.2.0
 
 First Python release: a Python port of moov-io/cadeft, verified against the original Go implementation
