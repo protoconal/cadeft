@@ -109,6 +109,8 @@ def prepare_go_reference() -> Path:
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=target, text=True, capture_output=True, check=True)
     if head.stdout.strip() != GO_REFERENCE_COMMIT:
         raise RuntimeError(f"{target} is not at {GO_REFERENCE_COMMIT}")
+    if not (target / "go.mod").is_file():
+        raise unittest.SkipTest("upstream commit does not contain a Go module")
     helper = target / "tools" / "parityref"
     shutil.rmtree(helper, ignore_errors=True)
     shutil.copytree(PARITYREF_SRC, helper)
