@@ -20,7 +20,7 @@ import unittest
 
 GO_REFERENCE_REPO = "https://github.com/moov-io/cadeft"
 # Default pin; CI overrides it with CADEFT_GO_REF_COMMIT to test every upstream commit.
-GO_REFERENCE_COMMIT = os.environ.get("CADEFT_GO_REF_COMMIT", "a81ef5be6d954dc2bb9cf4f6079ea7e595186c84")
+GO_REFERENCE_COMMIT = os.environ.get("CADEFT_GO_REF_COMMIT", "e4350a4dd9548b69f25d0dc4aadf8d5d015ee498")
 
 ROOT = Path(__file__).resolve().parents[1]
 PARITYREF_SRC = Path(__file__).resolve().parent / "reference" / "parityref"
