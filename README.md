@@ -73,14 +73,14 @@ print(eft_file.create())
 ## 80-byte (TD) format
 
 `cadeft.eft80` reads and writes the 80-byte A/X/C/D/Y/Z record format. Trailing blanks may be trimmed on
-input, non-spec characters are rejected unless `strict=False` (also on `validate` and `create`), records may be delimited by CR, LF or CRLF, and batch controls and the footer are computed on output:
+input, non-spec characters are rejected, records must be delimited by CRLF on input (bare CR or LF is rejected), output is CRLF-terminated by default, and batch controls and the footer are computed on output:
 
 ```python
 from cadeft.eft80 import parse_file80
 
 eft_file = parse_file80(open("td_fees.txt").read())
 eft_file.validate()
-print(eft_file.create(eol="\r"))
+print(eft_file.create())  # CRLF by default; pass eol= to override
 ```
 
 ## Command line
