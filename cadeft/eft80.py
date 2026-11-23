@@ -10,9 +10,7 @@ from typing import Any
 from . import CadeftError, ParseError, ValidationError, eft_date, parse_date
 
 RECORD_LENGTH = 80
-_STRICT = re.compile(r"[0-9A-Z =$.*,\-]*")
-# Non-strict also accepts "/", "(" and ")", which appear in the TD sample.
-_LENIENT = re.compile(r"[0-9A-Z =$.*,/()\-]*")
+_ALLOWED = re.compile(r"[0-9A-Z =$.*,\-]*")
 
 
 def _num(value: str, what: str) -> int:
@@ -42,10 +40,9 @@ def _pad(line: str, record_type: str) -> str:
     return line.ljust(RECORD_LENGTH)
 
 
-def _check_chars(strict: bool, *values: str) -> None:
-    allowed = _STRICT if strict else _LENIENT
+def _check_chars(*values: str) -> None:
     for value in values:
-        if not allowed.fullmatch(value):
+        if not _ALLOWED.fullmatch(value):
             raise ValidationError(f"invalid characters in {value!r}")
 
 
@@ -87,12 +84,12 @@ class Header80:
             destination_data_centre=_num(line[21:26], "destination data centre"),
         )
 
-    def validate(self, strict: bool = True) -> None:
+    def validate(self) -> None:
         if not self.originator_id.strip():
             raise ValidationError("originator id is required")
         if self.creation_date is None:
             raise ValidationError("file creation date is required")
-        _check_chars(strict, self.originator_id)
+        _check_chars(self.originator_id)
         self.build()
 
     def to_dict(self) -> dict[str, Any]:
@@ -141,7 +138,7 @@ class BatchHeader80:
             return_account_no=line[65:77].rstrip(),
         )
 
-    def validate(self, strict: bool = True) -> None:
+    def validate(self) -> None:
         if self.payment_type not in ("C", "D"):
             raise ValidationError("batch payment type must be C or D")
         if not re.fullmatch(r"[0-9]{3}", self.transaction_type):
@@ -150,7 +147,7 @@ class BatchHeader80:
             raise ValidationError("due date is required")
         if not re.fullmatch(r"0[0-9]{8}", self.return_institution_id):
             raise ValidationError("return institution id must be 0BBBTTTTT")
-        _check_chars(strict, self.short_name, self.long_name, self.return_account_no)
+        _check_chars(self.short_name, self.long_name, self.return_account_no)
         self.build()
 
     def to_dict(self) -> dict[str, Any]:
@@ -200,14 +197,14 @@ class Detail80:
             cross_reference=line[61:80].rstrip(),
         )
 
-    def validate(self, strict: bool = True) -> None:
+    def validate(self) -> None:
         if self.record_type not in ("C", "D"):
             raise ValidationError("detail record type must be C or D")
         if not re.fullmatch(r"0[0-9]{8}", self.institution_id):
             raise ValidationError("institution id must be 0BBBTTTTT")
         if not self.account_no.strip() or " " in self.account_no.strip():
             raise ValidationError("account number is required and must not contain blanks")
-        _check_chars(strict, self.account_no, self.name, self.cross_reference)
+        _check_chars(self.account_no, self.name, self.cross_reference)
         self.build()
 
     def to_dict(self) -> dict[str, Any]:
@@ -308,9 +305,9 @@ class File80:
                     footer.credit_count += 1
         return footer
 
-    def create(self, eol: str = "\n", strict: bool = True) -> str:
+    def create(self, eol: str = "\r\n") -> str:
         """Validate, then build; batch controls and footer are computed from the details."""
-        self.validate(strict)
+        self.validate()
         lines = [self.header.build()]
         for batch in self.batches:
             lines.append(batch.header.build())
@@ -319,17 +316,17 @@ class File80:
         lines.append(self.computed_footer().build())
         return eol.join(lines) + eol
 
-    def validate(self, strict: bool = True) -> None:
-        """strict=True rejects characters outside the spec set (0-9, A-Z, blank, = $ . * , -)."""
-        self.header.validate(strict)
+    def validate(self) -> None:
+        """Rejects characters outside the spec set (0-9, A-Z, blank, = $ . * , -)."""
+        self.header.validate()
         creation = _as_date(self.header.creation_date)
         for batch in self.batches:
-            batch.header.validate(strict)
+            batch.header.validate()
             due = _as_date(batch.header.due_date)
             if (due - creation).days > 100:
                 raise ValidationError("due date must not exceed 100 days from file creation date")
             for detail in batch.details:
-                detail.validate(strict)
+                detail.validate()
                 if detail.record_type != batch.header.payment_type:
                     raise ValidationError(
                         f"{detail.record_type} record in a {batch.header.payment_type} batch")
@@ -343,11 +340,14 @@ class File80:
                 "footer": (self.footer or self.computed_footer()).to_dict()}
 
 
-def parse_file80(text: str, strict: bool = True) -> File80:
-    """Parse an 80-byte file delimited by CR, LF or CRLF; trailing blanks may be trimmed.
+def parse_file80(text: str) -> File80:
+    """Parse an 80-byte file whose records are delimited by CRLF only; trailing blanks may be trimmed.
 
-    strict=True rejects characters outside the spec set."""
-    lines = [line for line in re.split(r"\r\n|\r|\n", text) if line.strip()]
+    Rejects characters outside the spec set."""
+    raw_lines = text.split("\r\n")
+    if any("\r" in line or "\n" in line for line in raw_lines):
+        raise ParseError("records must be terminated by CRLF")
+    lines = [line for line in raw_lines if line.strip()]
     if not lines or lines[0][:1] != "A":
         raise ParseError("file must start with an A record")
     file = File80(Header80.parse(lines[0]))
@@ -379,11 +379,10 @@ def parse_file80(text: str, strict: bool = True) -> File80:
                 raise ParseError(f"unknown record type {kind!r}")
         except CadeftError as exc:
             raise type(exc)(f"line {number}: {exc}") from exc
-    if strict:
-        try:
-            _check_chars(True, *(line.rstrip() for line in lines))
-        except ValidationError as exc:
-            raise ParseError(str(exc)) from exc
+    try:
+        _check_chars(*(line.rstrip() for line in lines))
+    except ValidationError as exc:
+        raise ParseError(str(exc)) from exc
     if batch is not None:
         raise ParseError("missing batch control record")
     if file.footer is None:
