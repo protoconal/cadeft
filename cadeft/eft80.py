@@ -308,8 +308,9 @@ class File80:
                     footer.credit_count += 1
         return footer
 
-    def create(self, eol: str = "\n") -> str:
-        """Build the file; batch controls and footer are computed from the details."""
+    def create(self, eol: str = "\n", strict: bool = True) -> str:
+        """Validate, then build; batch controls and footer are computed from the details."""
+        self.validate(strict)
         lines = [self.header.build()]
         for batch in self.batches:
             lines.append(batch.header.build())
@@ -342,8 +343,10 @@ class File80:
                 "footer": (self.footer or self.computed_footer()).to_dict()}
 
 
-def parse_file80(text: str) -> File80:
-    """Parse an 80-byte file delimited by CR, LF or CRLF; trailing blanks may be trimmed."""
+def parse_file80(text: str, strict: bool = True) -> File80:
+    """Parse an 80-byte file delimited by CR, LF or CRLF; trailing blanks may be trimmed.
+
+    strict=True rejects characters outside the spec set."""
     lines = [line for line in re.split(r"\r\n|\r|\n", text) if line.strip()]
     if not lines or lines[0][:1] != "A":
         raise ParseError("file must start with an A record")
@@ -376,6 +379,11 @@ def parse_file80(text: str) -> File80:
                 raise ParseError(f"unknown record type {kind!r}")
         except CadeftError as exc:
             raise type(exc)(f"line {number}: {exc}") from exc
+    if strict:
+        try:
+            _check_chars(True, *(line.rstrip() for line in lines))
+        except ValidationError as exc:
+            raise ParseError(str(exc)) from exc
     if batch is not None:
         raise ParseError("missing batch control record")
     if file.footer is None:

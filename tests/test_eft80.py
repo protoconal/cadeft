@@ -13,10 +13,18 @@ SAMPLE = "\n".join([
 
 
 class Eft80Tests(unittest.TestCase):
-    def test_parse_sample(self):
-        eft = parse_file80(SAMPLE)
+    def test_strict_is_default(self):
+        with self.assertRaises(ParseError):
+            parse_file80(SAMPLE)  # "/" and "()" are outside the spec set
+        eft = parse_file80(SAMPLE, strict=False)
         with self.assertRaises(ValidationError):
-            eft.validate()  # strict by default: "/" and "()" are outside the spec set
+            eft.validate()
+        with self.assertRaises(ValidationError):
+            eft.create()
+        eft.create(strict=False)
+
+    def test_parse_sample(self):
+        eft = parse_file80(SAMPLE, strict=False)
         eft.validate(strict=False)
         self.assertEqual(eft.header.originator_id, "COMPANY12C")
         batch = eft.batches[0]
@@ -30,22 +38,22 @@ class Eft80Tests(unittest.TestCase):
         self.assertEqual(eft.footer.credit_amount, 1234)
 
     def test_create_round_trip_is_80_wide(self):
-        eft = parse_file80(SAMPLE)
-        out = eft.create()
+        eft = parse_file80(SAMPLE, strict=False)
+        out = eft.create(strict=False)
         lines = out.splitlines()
         self.assertTrue(all(len(line) == RECORD_LENGTH for line in lines))
         self.assertEqual([l.rstrip() for l in lines], [l.rstrip() for l in SAMPLE.split("\n")])
-        self.assertEqual(parse_file80(out).to_dict(), eft.to_dict())
+        self.assertEqual(parse_file80(out, strict=False).to_dict(), eft.to_dict())
 
     def test_cr_delimited_and_bad_footer(self):
-        parse_file80(SAMPLE.replace("\n", "\r"))
-        eft = parse_file80(SAMPLE.replace("00001", "00002", 1)[:-5] + "00002")
+        parse_file80(SAMPLE.replace("\n", "\r"), strict=False)
+        eft = parse_file80(SAMPLE.replace("00001", "00002", 1)[:-5] + "00002", strict=False)
         with self.assertRaises(ValidationError):
             eft.validate(strict=False)
 
     def test_errors(self):
         with self.assertRaises(ParseError):
-            parse_file80(SAMPLE.replace("\nZ00000000000000000000000000000123400001", ""))
+            parse_file80(SAMPLE.replace("\nZ00000000000000000000000000000123400001", ""), strict=False)
         with self.assertRaises(ParseError):
             parse_file80("Y")
         with self.assertRaises(ValidationError):
