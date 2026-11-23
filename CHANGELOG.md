@@ -1,3 +1,7 @@
+## Unreleased
+
+Add `cadeft.eft80` for the 80-byte (TD) record format.
+
 ## v0.3.1
 
 Test Publishing Pt 2
