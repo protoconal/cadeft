@@ -10,8 +10,9 @@ from typing import Any
 from . import CadeftError, ParseError, ValidationError, eft_date, parse_date
 
 RECORD_LENGTH = 80
-# "/", "(" and ")" are not in the spec table but appear in the TD sample.
-_ALLOWED = re.compile(r"[0-9A-Z =$.*,/()\-]*")
+_STRICT = re.compile(r"[0-9A-Z =$.*,\-]*")
+# Non-strict also accepts "/", "(" and ")", which appear in the TD sample.
+_LENIENT = re.compile(r"[0-9A-Z =$.*,/()\-]*")
 
 
 def _num(value: str, what: str) -> int:
@@ -41,9 +42,10 @@ def _pad(line: str, record_type: str) -> str:
     return line.ljust(RECORD_LENGTH)
 
 
-def _check_chars(*values: str) -> None:
+def _check_chars(strict: bool, *values: str) -> None:
+    allowed = _STRICT if strict else _LENIENT
     for value in values:
-        if not _ALLOWED.fullmatch(value):
+        if not allowed.fullmatch(value):
             raise ValidationError(f"invalid characters in {value!r}")
 
 
@@ -85,12 +87,12 @@ class Header80:
             destination_data_centre=_num(line[21:26], "destination data centre"),
         )
 
-    def validate(self) -> None:
+    def validate(self, strict: bool = True) -> None:
         if not self.originator_id.strip():
             raise ValidationError("originator id is required")
         if self.creation_date is None:
             raise ValidationError("file creation date is required")
-        _check_chars(self.originator_id)
+        _check_chars(strict, self.originator_id)
         self.build()
 
     def to_dict(self) -> dict[str, Any]:
@@ -139,7 +141,7 @@ class BatchHeader80:
             return_account_no=line[65:77].rstrip(),
         )
 
-    def validate(self) -> None:
+    def validate(self, strict: bool = True) -> None:
         if self.payment_type not in ("C", "D"):
             raise ValidationError("batch payment type must be C or D")
         if not re.fullmatch(r"[0-9]{3}", self.transaction_type):
@@ -148,7 +150,7 @@ class BatchHeader80:
             raise ValidationError("due date is required")
         if not re.fullmatch(r"0[0-9]{8}", self.return_institution_id):
             raise ValidationError("return institution id must be 0BBBTTTTT")
-        _check_chars(self.short_name, self.long_name, self.return_account_no)
+        _check_chars(strict, self.short_name, self.long_name, self.return_account_no)
         self.build()
 
     def to_dict(self) -> dict[str, Any]:
@@ -198,14 +200,14 @@ class Detail80:
             cross_reference=line[61:80].rstrip(),
         )
 
-    def validate(self) -> None:
+    def validate(self, strict: bool = True) -> None:
         if self.record_type not in ("C", "D"):
             raise ValidationError("detail record type must be C or D")
         if not re.fullmatch(r"0[0-9]{8}", self.institution_id):
             raise ValidationError("institution id must be 0BBBTTTTT")
         if not self.account_no.strip() or " " in self.account_no.strip():
             raise ValidationError("account number is required and must not contain blanks")
-        _check_chars(self.account_no, self.name, self.cross_reference)
+        _check_chars(strict, self.account_no, self.name, self.cross_reference)
         self.build()
 
     def to_dict(self) -> dict[str, Any]:
@@ -316,16 +318,17 @@ class File80:
         lines.append(self.computed_footer().build())
         return eol.join(lines) + eol
 
-    def validate(self) -> None:
-        self.header.validate()
+    def validate(self, strict: bool = True) -> None:
+        """strict=True rejects characters outside the spec set (0-9, A-Z, blank, = $ . * , -)."""
+        self.header.validate(strict)
         creation = _as_date(self.header.creation_date)
         for batch in self.batches:
-            batch.header.validate()
+            batch.header.validate(strict)
             due = _as_date(batch.header.due_date)
             if (due - creation).days > 100:
                 raise ValidationError("due date must not exceed 100 days from file creation date")
             for detail in batch.details:
-                detail.validate()
+                detail.validate(strict)
                 if detail.record_type != batch.header.payment_type:
                     raise ValidationError(
                         f"{detail.record_type} record in a {batch.header.payment_type} batch")

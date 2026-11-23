@@ -15,7 +15,9 @@ SAMPLE = "\n".join([
 class Eft80Tests(unittest.TestCase):
     def test_parse_sample(self):
         eft = parse_file80(SAMPLE)
-        eft.validate()
+        with self.assertRaises(ValidationError):
+            eft.validate()  # strict by default: "/" and "()" are outside the spec set
+        eft.validate(strict=False)
         self.assertEqual(eft.header.originator_id, "COMPANY12C")
         batch = eft.batches[0]
         self.assertEqual(batch.header.short_name, "SHORT NAME15CAR")
@@ -39,7 +41,7 @@ class Eft80Tests(unittest.TestCase):
         parse_file80(SAMPLE.replace("\n", "\r"))
         eft = parse_file80(SAMPLE.replace("00001", "00002", 1)[:-5] + "00002")
         with self.assertRaises(ValidationError):
-            eft.validate()
+            eft.validate(strict=False)
 
     def test_errors(self):
         with self.assertRaises(ParseError):
