@@ -8,6 +8,11 @@ on:
         description: "Only test the newest N upstream commits (0 = all)"
         default: "0"
   workflow_call:
+    inputs:
+      limit:
+        description: "Only test the newest N upstream commits (0 = all)"
+        type: string
+        default: "0"
   schedule:
     - cron: "0 6 1 */3 *"
   pull_request:
@@ -59,16 +64,20 @@ jobs:
           gh api --paginate "repos/moov-io/cadeft/commits?sha=master&per_page=100" \
             --jq '.[] | {sha: .sha, subject: (.commit.message | split("\n")[0])}' \
             | jq -sc --argjson n "$LIMIT" 'if $n > 0 then .[:$n] else . end | .[]' > commits.jsonl
-          while read -r line; do
+          test_commit() {
+            line="$1"
             sha=$(jq -r .sha <<< "$line")
-            [ -f "results/$sha.json" ] && continue
+            [ -f "results/$sha.json" ] && return 0
             if CADEFT_GO_REF_COMMIT="$sha" python -m unittest tests.test_parity; then
               outcome=success
             else
               outcome=failure
             fi
             jq -c --arg outcome "$outcome" '. + {outcome: $outcome}' <<< "$line" > "results/$sha.json"
-          done < commits.jsonl
+          }
+          export -f test_commit
+          # Each commit uses its own checkout dir, so they are safe to run concurrently.
+          xargs -d '\n' -P 4 -I{} bash -c 'test_commit "$1"' _ {} < commits.jsonl
 
       - name: Build report
         run: |

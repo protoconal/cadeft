@@ -10,6 +10,8 @@ permissions:
 jobs:
   parity:
     uses: ./.github/workflows/upstream-parity.yml
+    with:
+      limit: "1"
 
   build:
     runs-on: ubuntu-latest
